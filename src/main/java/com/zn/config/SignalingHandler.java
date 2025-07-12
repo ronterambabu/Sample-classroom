@@ -143,13 +143,34 @@ public class SignalingHandler extends TextWebSocketHandler {
   }
   @Override
   public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-	System.out.println("WebSocket connection closed: " + session.getId());
-	// Remove session from all rooms
-	for (Set<WebSocketSession> participants : rooms.values()) {
-	  participants.remove(session);
+	System.out.println("WebSocket connection closed: " + session.getId() + ", status: " + status);
+	
+	// Find which rooms this session was in and notify other participants
+	ObjectMapper mapper = new ObjectMapper();
+	for (Map.Entry<String, Set<WebSocketSession>> roomEntry : rooms.entrySet()) {
+		Set<WebSocketSession> participants = roomEntry.getValue();
+		if (participants.remove(session)) {
+			System.out.println("Removed session " + session.getId() + " from room " + roomEntry.getKey());
+			
+			// Notify remaining participants that this peer left
+			for (WebSocketSession remainingSession : participants) {
+				try {
+					String peerLeftMessage = mapper.writeValueAsString(Map.of(
+						"type", "peer-left",
+						"id", session.getId()
+					));
+					System.out.println("Notifying " + remainingSession.getId() + " that peer " + session.getId() + " left");
+					remainingSession.sendMessage(new TextMessage(peerLeftMessage));
+				} catch (Exception e) {
+					System.err.println("Error notifying peer about disconnection: " + e.getMessage());
+				}
+			}
+		}
 	}
+	
 	// Clean up empty rooms
 	rooms.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+	System.out.println("Remaining rooms: " + rooms.size());
   }
 }
 
