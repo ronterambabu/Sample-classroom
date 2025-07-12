@@ -47,10 +47,13 @@ public class SignalingHandler extends TextWebSocketHandler {
 			  }
 			  
 			  String roomId = roomNode.asText();
+			  System.out.println("Session " + session.getId() + " joining room: " + roomId);
+			  
 			  rooms.putIfAbsent(roomId, ConcurrentHashMap.newKeySet());
 			  
 			  // Get existing peers in the room before adding the new session
 			  Set<WebSocketSession> existingPeers = rooms.get(roomId);
+			  System.out.println("Existing peers in room " + roomId + ": " + existingPeers.size());
 			  
 			  // Send existing peers to the new session
 			  if (!existingPeers.isEmpty()) {
@@ -58,26 +61,47 @@ public class SignalingHandler extends TextWebSocketHandler {
 					  .map(WebSocketSession::getId)
 					  .toArray(String[]::new);
 				  
-				  session.sendMessage(new TextMessage(
-					  mapper.writeValueAsString(Map.of(
-						  "type", "existing-peer",
-						  "peers", peerIds
-					  ))
+				  String existingPeerMessage = mapper.writeValueAsString(Map.of(
+					  "type", "existing-peer",
+					  "peers", peerIds
 				  ));
+				  System.out.println("Sending existing-peer message to " + session.getId() + ": " + existingPeerMessage);
+				  try {
+					  session.sendMessage(new TextMessage(existingPeerMessage));
+				  } catch (Exception e) {
+					  System.err.println("Error sending existing-peer message: " + e.getMessage());
+				  }
+			  } else {
+				  // Send an empty existing-peer message to acknowledge the join
+				  String emptyPeerMessage = mapper.writeValueAsString(Map.of(
+					  "type", "existing-peer",
+					  "peers", new String[0]
+				  ));
+				  System.out.println("Sending empty existing-peer message to " + session.getId() + ": " + emptyPeerMessage);
+				  try {
+					  session.sendMessage(new TextMessage(emptyPeerMessage));
+				  } catch (Exception e) {
+					  System.err.println("Error sending empty existing-peer message: " + e.getMessage());
+				  }
 			  }
 			  
 			  // Add the new session to the room
 			  rooms.get(roomId).add(session);
+			  System.out.println("Added session " + session.getId() + " to room " + roomId + ". Room now has " + rooms.get(roomId).size() + " participants");
 
 			  // Notify all other peers in the room about the new peer
 			  for (WebSocketSession s : existingPeers) {
 				  if (!s.equals(session)) {
-					  s.sendMessage(new TextMessage(
-						  mapper.writeValueAsString(Map.of(
-							  "type", "new-peer",
-							  "id", session.getId()
-						  ))
+					  String newPeerMessage = mapper.writeValueAsString(Map.of(
+						  "type", "new-peer",
+						  "id", session.getId()
 					  ));
+					  System.out.println("Notifying existing peer " + s.getId() + " about new peer: " + newPeerMessage);
+					  try {
+						  s.sendMessage(new TextMessage(newPeerMessage));
+					  } catch (Exception e) {
+						  System.err.println("Error notifying existing peer: " + e.getMessage());
+					  }
 				  }
 			  }
 		  }
@@ -113,6 +137,8 @@ public class SignalingHandler extends TextWebSocketHandler {
 		  System.err.println("Error parsing JSON message: " + e.getMessage());
 	  } catch (IllegalArgumentException e) {
 		  System.err.println("Invalid message format: " + e.getMessage());
+	  } catch (Exception e) {
+		  System.err.println("Unexpected error handling message: " + e.getMessage());
 	  }
   }
   @Override
@@ -126,3 +152,4 @@ public class SignalingHandler extends TextWebSocketHandler {
 	rooms.entrySet().removeIf(entry -> entry.getValue().isEmpty());
   }
 }
+
